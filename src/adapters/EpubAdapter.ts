@@ -8,6 +8,7 @@ import type {
   DocumentPosition,
   DocumentSelection,
 } from "../core/types";
+import type { ReaderLocation } from "../reader/types";
 
 export interface EpubAdapterOptions {
   width?: number | string;
@@ -26,6 +27,7 @@ export class EpubAdapter implements DocumentAdapter {
   private css = "";
   private appliedStyles = new Set<string>();
   private selectionHandlers = new Set<(s: DocumentSelection) => void>();
+  private locationHandlers = new Set<(location: ReaderLocation) => void>();
 
   constructor(private options: EpubAdapterOptions = {}) {}
 
@@ -100,13 +102,19 @@ export class EpubAdapter implements DocumentAdapter {
       rendition.hooks.content.register(this.applyCss);
       // Annotations are reattached by epub.js's earlier render hook.
       rendition.hooks.render.register(this.decorateMarks);
+      rendition.on("relocated", () => {
+        if (this.rendition !== rendition) return;
+        const location = this.currentLocation();
+        if (location)
+          this.locationHandlers.forEach((handler) => handler(location));
+      });
       rendition.on("selected", (cfiRange: string, contents: Contents) => {
         if (this.rendition !== rendition) return;
         const selection: DocumentSelection = {
           format: "epub",
           position: { format: "epub", cfiRange },
           content: { text: contents.range(cfiRange).toString() },
-          hide: () => contents.window.getSelection()?.removeAllRanges(),
+          hide: () => contents.window?.getSelection()?.removeAllRanges(),
         };
         this.selectionHandlers.forEach((handler) => handler(selection));
       });
@@ -149,7 +157,19 @@ export class EpubAdapter implements DocumentAdapter {
     cfi?: string;
     percentage?: number;
   } | null {
-    const loc = this.rendition?.location;
+    // rendition.location is published on a later animation frame, after
+    // display() has already resolved. Ask the manager for its current view so
+    // an awaited navigation followed by getLocation() never reads the old page.
+    const current = this.rendition?.currentLocation() as unknown as
+      | {
+          start?: {
+            cfi?: string;
+            percentage?: number;
+            displayed?: { page?: number };
+          };
+        }
+      | undefined;
+    const loc = current?.start ? current : this.rendition?.location;
     if (!loc) return null;
     return {
       cfi: loc.start?.cfi,
@@ -163,6 +183,39 @@ export class EpubAdapter implements DocumentAdapter {
     return () => {
       this.selectionHandlers.delete(handler);
     };
+  }
+
+  onLocation(handler: (location: ReaderLocation) => void): () => void {
+    this.locationHandlers.add(handler);
+    return () => {
+      this.locationHandlers.delete(handler);
+    };
+  }
+
+  /** Explicit capture for native context menus that don't emit selectionchange. */
+  captureSelection(): boolean {
+    const rendition = this.rendition;
+    if (!rendition) return false;
+    const contents = rendition.getContents() as unknown as Contents[];
+    for (const content of contents) {
+      const selection = content.window?.getSelection();
+      if (!selection?.rangeCount || selection.isCollapsed) continue;
+      rendition.emit(
+        "selected",
+        content.cfiFromRange(selection.getRangeAt(0)),
+        content,
+      );
+      return true;
+    }
+    return false;
+  }
+
+  clearSelection(): void {
+    const contents = (this.rendition?.getContents() ??
+      []) as unknown as Contents[];
+    contents.forEach((content) =>
+      content.window?.getSelection()?.removeAllRanges(),
+    );
   }
 
   addHighlight(

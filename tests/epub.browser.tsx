@@ -679,6 +679,30 @@ export async function runEpubValidation() {
       await until(() => ref.current?.adapter, "Recovery failed");
       assert(!h.querySelector('[role="alert"]'), "Error not cleared");
     });
+    await test("Custom error presentation stays separate from reader state", async () => {
+      let state:
+        { status: string; error?: { code: string } | null } | undefined;
+      render({
+        source: "/missing-validation.epub",
+        onStateChange: (value) => {
+          state = value;
+        },
+        renderStatus: (value) =>
+          value.error ? <span>Custom failure: {value.error.code}</span> : null,
+      });
+      await until(() => state?.status === "error", "No structured error state");
+      assert(
+        state?.error?.code === "LOAD_FAILED" &&
+          h.textContent?.includes("Custom failure: LOAD_FAILED"),
+        "Custom error UI/state mismatch",
+      );
+      assert(
+        !h.querySelector('[role="alert"]'),
+        "Default UI rendered with custom presentation",
+      );
+      render({ source: fixtureUrl, renderStatus: undefined });
+      await until(() => ref.current?.adapter, "Recovery failed");
+    });
     await test("Rapid prop changes and unmount during loading leave no viewer", async () => {
       render({ source: await (await fetch(fixtureUrl)).arrayBuffer() });
       render({ source: fixtureUrl });

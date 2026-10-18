@@ -1,5 +1,8 @@
 # EPUB reader
 
+For the shared controller, customizable error presentation, and React Native
+WebView integration, see [shared EPUB logic and React Native](react-native.md).
+
 `EpubHighlighter` renders EPUB documents with EPUB.js. Run `npm ci` and
 `npm run dev`, then open <http://localhost:3000/?format=epub> for the EPUB demo.
 The demo includes an original three-chapter sample and accepts local `.epub`
@@ -76,7 +79,7 @@ With `npm run dev` running, open
 <http://localhost:3000/epub-validation.html> and click **Run validation**.
 The suite in `tests/epub.browser.tsx` uses real EPUB.js rendering and React
 StrictMode, without a mocked renderer or remote book dependency. It reports
-32 cases covering loading, error recovery, navigation, full-book and concurrent
+33 cases covering loading, error recovery, navigation, full-book and concurrent
 searches, native text selection, annotation rendering and reconciliation,
 styles, CSS replacement, feature switches, context/ref methods, source changes,
 and cleanup while requests and rendering are in flight.

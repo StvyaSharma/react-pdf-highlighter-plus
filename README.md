@@ -58,6 +58,7 @@
 ## Quick Links
 
 EPUB support: [reader usage, demo, and browser validation](docs/epub.md).
+React Native: [bundled WebView reader, shared logic, and error presentation](docs/react-native.md).
 
 | Resource | Link |
 |----------|------|

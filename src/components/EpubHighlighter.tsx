@@ -5,13 +5,18 @@ import React, {
   useEffect,
   useRef,
   useState,
+  useMemo,
 } from "react";
 import { EpubAdapter } from "../adapters/EpubAdapter";
+import { BrowserEpubEngine } from "../adapters/BrowserEpubEngine";
+import { ReaderController } from "../reader/ReaderController";
+import { ReaderFailure } from "../reader/errors";
+import type { ReaderState, ReaderConfiguration } from "../reader/types";
+import { EpubReaderStatus } from "./EpubReaderStatus";
 import type { DocumentAdapter } from "../core/types";
 import type {
   DocumentHighlight,
   DocumentHighlighterProps,
-  DocumentSelection,
 } from "../core/types";
 import { DocumentHighlighterContext } from "../core/DocumentContext";
 
@@ -49,10 +54,16 @@ export interface EpubHighlighterProps<
   onReady?: (adapter: EpubAdapter) => void;
   /** Loading and rendering errors are also shown in an accessible alert. */
   onError?: (error: Error) => void;
+  onStateChange?: (state: ReaderState) => void;
+  /** Replace the default error presentation, or return null to render none. */
+  renderStatus?: (state: ReaderState, retry: () => void) => ReactNode;
 }
 
 export interface EpubHighlighterHandle {
   adapter: EpubAdapter | null;
+  /** Portable, asynchronous reader commands and structured state. */
+  reader: ReaderController | null;
+  retry: () => Promise<void>;
   next: () => Promise<void>;
   prev: () => Promise<void>;
   display: (target?: string | number) => Promise<void>;
@@ -95,161 +106,100 @@ export const EpubHighlighter = forwardRef<
     features,
     onReady,
     onError,
+    onStateChange,
+    renderStatus,
   } = props;
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [adapter, setAdapter] = useState<EpubAdapter | null>(null);
+  const [reader, setReader] = useState<ReaderController | null>(null);
+  const [readerState, setReaderState] = useState<ReaderState>({
+    status: "idle",
+    error: null,
+    location: null,
+  });
   const [tip, setTip] = useState<ReactNode>(null);
-  const [error, setError] = useState<Error | null>(null);
-  const callbacks = useRef({ onReady, onError });
-  callbacks.current = { onReady, onError };
-  const handlesRef = useRef<
-    Map<string, { cfi: string; type: string; signature: string }>
-  >(new Map());
-  const highlightEnabled = features?.highlight !== false;
-  const navigationEnabled = features?.navigation !== false;
-  const searchEnabled = features?.search !== false;
-  const outlineEnabled = features?.outline !== false;
+  const callbacks = useRef({ onReady, onError, onSelection, onStateChange });
+  callbacks.current = { onReady, onError, onSelection, onStateChange };
+  const configuration: ReaderConfiguration = useMemo(
+    () => ({ highlights, styles, customCss, features }),
+    [highlights, styles, customCss, features],
+  );
+  const latestConfiguration = useRef(configuration);
+  latestConfiguration.current = configuration;
 
-  // Load + render on mount / source change.
   useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    let cancelled = false;
-    // Give each async render its own host so a superseded render cannot
-    // append stale iframes into the next document (including in StrictMode).
-    const host = document.createElement("div");
-    host.style.cssText = "width:100%;height:100%";
-    el.appendChild(host);
-    const adapter = new EpubAdapter({ flow, width, height });
-    setError(null);
+    const container = containerRef.current;
+    if (!container) return;
+    let engine: BrowserEpubEngine;
+    const controller = new ReaderController(() => {
+      engine = new BrowserEpubEngine(container, { flow, width, height });
+      return engine;
+    });
+    const off = controller.subscribe(() => {
+      const state = controller.getState();
+      setReaderState(state);
+      callbacks.current.onStateChange?.(state);
+      if (state.status === "ready") setAdapter(engine.adapter);
+      else if (state.status === "loading" || state.status === "error")
+        setAdapter(null);
+      if (state.error)
+        callbacks.current.onError?.(new ReaderFailure(state.error));
+    });
+    const offSelection = controller.onSelection((selection) =>
+      callbacks.current.onSelection?.({
+        ...selection,
+        hide: () => engine.adapter.clearSelection(),
+      }),
+    );
+    setReader(controller);
     setTip(null);
-    (async () => {
-      try {
-        await adapter.load(source);
-        if (cancelled) return;
-        await adapter.render(host);
-        if (cancelled) return;
-        setAdapter(adapter);
-      } catch (err) {
-        if (cancelled) return;
-        const error = err instanceof Error ? err : new Error(String(err));
-        adapter.destroy();
-        host.replaceChildren();
-        setError(error);
-        callbacks.current.onError?.(error);
-      }
-    })();
+    void controller.configure(latestConfiguration.current);
+    void controller.load(source);
     return () => {
-      cancelled = true;
-      handlesRef.current.clear();
-      adapter.destroy();
-      host.remove();
+      off();
+      offSelection();
+      controller.dispose();
+      setReader(null);
       setAdapter(null);
     };
   }, [source, flow, width, height]);
 
-  // Apply style changes.
   useEffect(() => {
-    if (!adapter) return;
-    adapter.setStyles((styles ?? {}) as Record<string, string | number>);
-  }, [adapter, styles]);
-
-  useEffect(() => {
-    if (!adapter) return;
-    adapter.injectCss(customCss ?? "");
-  }, [adapter, customCss]);
-
-  // Forward selections.
-  useEffect(() => {
-    if (!adapter || !highlightEnabled) return;
-    const unsub = adapter.onSelection((sel: DocumentSelection) => {
-      onSelection?.(sel);
-    });
-    return unsub;
-  }, [adapter, onSelection, highlightEnabled]);
-
-  // Sync highlights -> rendition annotations.
-  useEffect(() => {
-    if (!adapter) return;
-    const handles = handlesRef.current;
-    const desired = new Map<
-      string,
-      { highlight: DocumentHighlight; type: string; signature: string }
-    >();
-    for (const highlight of highlightEnabled ? highlights : []) {
-      if (highlight.position.format !== "epub" || !highlight.position.cfiRange)
-        continue;
-      const type =
-        highlight.type === "text" || !highlight.type
-          ? "highlight"
-          : highlight.type;
-      // Notes use epub.js's highlight primitive and share its CFI/type key.
-      const key = `${type === "note" ? "highlight" : type}:${highlight.position.cfiRange}`;
-      desired.set(key, {
-        highlight,
-        type,
-        signature: JSON.stringify(highlight),
-      });
-    }
-    for (const [key, handle] of handles) {
-      if (desired.get(key)?.signature !== handle.signature) {
-        adapter.removeAnnotation(handle.cfi, handle.type);
-        handles.delete(key);
-      }
-    }
-    for (const [key, { highlight, type, signature }] of desired) {
-      if (handles.has(key)) continue;
-      const cfi = adapter.annotate(
-        type,
-        highlight.position.cfiRange!,
-        highlight.content,
-      );
-      if (cfi) handles.set(key, { cfi, type, signature });
-    }
-  }, [adapter, highlights, highlightEnabled]);
-
+    if (reader) void reader.configure(configuration).catch(() => undefined);
+  }, [reader, configuration]);
   const scrollToHighlight = (highlight: DocumentHighlight) => {
-    if (!adapter || !navigationEnabled) return;
-    const cfi = highlight.position.cfiRange;
-    if (cfi) {
-      adapter.display(cfi).catch(() => undefined);
-    }
+    if (highlight.position.format === "epub" && highlight.position.cfiRange)
+      void reader?.display(highlight.position.cfiRange).catch(() => undefined);
   };
-
   useImperativeHandle(
     ref,
     () => ({
       adapter,
+      reader,
+      retry: async () => reader?.retry(),
       next: async () => {
-        if (navigationEnabled) await adapter?.next();
+        await reader?.next();
       },
       prev: async () => {
-        if (navigationEnabled) await adapter?.prev();
+        await reader?.prev();
       },
       display: async (target) => {
-        if (navigationEnabled) await adapter?.display(target);
+        await reader?.display(target);
       },
-      search: async (query) =>
-        adapter && searchEnabled ? adapter.search(query) : [],
-      getOutline: async () =>
-        adapter && outlineEnabled ? adapter.getOutline() : [],
-      setStyles: (s) =>
-        adapter?.setStyles(s as Record<string, string | number>),
+      search: async (query) => (reader ? reader.search(query) : []),
+      getOutline: async () => (reader ? reader.getOutline() : []),
+      // Preserve the legacy synchronous browser methods. Portable consumers use reader.
+      setStyles: (value) =>
+        adapter?.setStyles(value as Record<string, string | number>),
       injectCss: (css) => adapter?.injectCss(css),
-      annotate: (type, cfi, data, styles) =>
-        adapter && highlightEnabled
-          ? adapter.annotate(type, cfi, data, styles)
+      annotate: (type, cfi, data, annotationStyles) =>
+        adapter && features?.highlight !== false
+          ? adapter.annotate(type, cfi, data, annotationStyles)
           : "",
       removeAnnotation: (cfi, type) => adapter?.removeAnnotation(cfi, type),
     }),
-    [
-      adapter,
-      navigationEnabled,
-      searchEnabled,
-      outlineEnabled,
-      highlightEnabled,
-    ],
+    [adapter, reader, features?.highlight],
   );
 
   // Run after the handle and controlled styles/annotations have been synced.
@@ -277,22 +227,18 @@ export const EpubHighlighter = forwardRef<
         }}
       >
         <div ref={containerRef} style={{ width: "100%", height: "100%" }} />
-        {error ? (
-          <div
-            role="alert"
-            style={{
-              position: "absolute",
-              top: 8,
-              left: 8,
-              right: 8,
-              padding: 12,
-              background: "white",
-              color: "#b91c1c",
+        {renderStatus ? (
+          renderStatus(readerState, () => {
+            void reader?.retry();
+          })
+        ) : (
+          <EpubReaderStatus
+            state={readerState}
+            retry={() => {
+              void reader?.retry();
             }}
-          >
-            Unable to open EPUB: {error.message}
-          </div>
-        ) : null}
+          />
+        )}
         {tip ? (
           <div
             style={{

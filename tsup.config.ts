@@ -3,7 +3,11 @@ import { copyFileSync, mkdirSync, readdirSync } from "fs";
 import { join } from "path";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: {
+    index: "src/index.ts",
+    reader: "src/reader/index.ts",
+    native: "src/native/index.ts",
+  },
   format: ["esm"],
   dts: true,
   sourcemap: true,
@@ -14,7 +18,13 @@ export default defineConfig({
   // downloaded by consumers that actually export PDFs.
   treeshake: true,
   splitting: true,
-  external: ["react", "react-dom", "pdfjs-dist"],
+  external: [
+    "react",
+    "react-dom",
+    "pdfjs-dist",
+    "react-native",
+    "react-native-webview",
+  ],
   esbuildOptions(options) {
     options.jsx = "transform";
   },

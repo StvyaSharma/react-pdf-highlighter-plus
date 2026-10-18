@@ -10,3 +10,4 @@ types
 local
 public
 example-app
+src/native/reader-html.generated.ts
