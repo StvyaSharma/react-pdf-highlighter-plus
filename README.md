@@ -57,6 +57,8 @@
 
 ## Quick Links
 
+EPUB support: [reader usage, demo, and browser validation](docs/epub.md).
+
 | Resource | Link |
 |----------|------|
 | Live Demo | [View Demo](https://quocvietha08.github.io/react-pdf-highlighter-plus/example-app/) |

@@ -1,0 +1,39 @@
+.epub-demo aside h2 {
+  margin: 16px 0 8px;
+  font-weight: 600;
+}
+
+.epub-demo aside p {
+  margin: 8px 0;
+}
+
+.epub-demo aside button,
+.epub-demo aside input:not([type="checkbox"]),
+.epub-demo aside select,
+.epub-demo aside textarea {
+  border: 1px solid #999;
+  border-radius: 4px;
+  padding: 3px 6px;
+  color: inherit;
+  background: inherit;
+  max-width: 100%;
+}
+
+.epub-demo aside button {
+  margin: 2px 0;
+  text-align: left;
+}
+
+.epub-demo aside button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.epub-demo aside a {
+  text-decoration: underline;
+}
+
+.epub-demo aside input[type="file"] {
+  width: 100%;
+  font-size: 12px;
+}

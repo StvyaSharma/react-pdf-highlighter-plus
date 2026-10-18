@@ -1,5 +1,13 @@
-import type { Book as BookType, Rendition as RenditionType } from "epubjs";
-import type { DocumentAdapter, DocumentPosition, DocumentSelection } from "../core/types";
+import type {
+  Book as BookType,
+  Contents,
+  Rendition as RenditionType,
+} from "epubjs";
+import type {
+  DocumentAdapter,
+  DocumentPosition,
+  DocumentSelection,
+} from "../core/types";
 
 export interface EpubAdapterOptions {
   width?: number | string;
@@ -12,90 +20,141 @@ export class EpubAdapter implements DocumentAdapter {
 
   private book: BookType | null = null;
   private rendition: RenditionType | null = null;
-
+  private generation = 0;
+  // epub.js cannot safely destroy a book while open/render/search is using it.
+  private pending = new Map<BookType, number>();
+  private css = "";
+  private appliedStyles = new Set<string>();
   private selectionHandlers = new Set<(s: DocumentSelection) => void>();
 
   constructor(private options: EpubAdapterOptions = {}) {}
 
-  async load(source: string | ArrayBuffer | Record<string, unknown>): Promise<void> {
-    this.destroy();
-    const ePub = (await import("epubjs")).default as unknown as (
-      src: unknown,
-      opts?: unknown,
-    ) => BookType;
-    let book: BookType;
-    if (typeof source === "string") {
-      book = ePub(source);
-    } else if (source instanceof ArrayBuffer) {
-      book = ePub(source);
-    } else if (source && typeof source === "object" && "url" in source && typeof (source as { url: unknown }).url === "string") {
-      book = ePub((source as { url: string }).url);
-    } else {
-      book = ePub(source as never);
+  private async useBook<T>(
+    book: BookType,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    this.pending.set(book, (this.pending.get(book) ?? 0) + 1);
+    try {
+      return await operation();
+    } finally {
+      const remaining = (this.pending.get(book) ?? 1) - 1;
+      if (remaining) this.pending.set(book, remaining);
+      else {
+        this.pending.delete(book);
+        if (this.book !== book) book.destroy();
+      }
     }
+  }
+
+  async load(
+    source: string | ArrayBuffer | Record<string, unknown>,
+  ): Promise<void> {
+    this.destroy();
+    const generation = this.generation;
+    const { default: ePub } = await import("epubjs");
+    if (generation !== this.generation) return;
+    const { url, ...options } =
+      typeof source === "object" && !(source instanceof ArrayBuffer)
+        ? source
+        : { url: source };
+    if (
+      !(url instanceof ArrayBuffer) &&
+      (typeof url !== "string" || !url.trim())
+    ) {
+      throw new Error(
+        "EpubAdapter: source must be a URL, ArrayBuffer, or { url, ...options }",
+      );
+    }
+    // Calling open explicitly propagates network/parsing failures. book.ready
+    // alone never rejects when opening fails in epub.js 0.3.
+    const book = ePub(options);
     this.book = book;
-    await book.ready;
+    try {
+      await this.useBook(book, async () => {
+        if (url instanceof ArrayBuffer) await book.open(url);
+        else
+          await book.open(
+            url,
+            typeof options.openAs === "string" ? options.openAs : undefined,
+          );
+        await book.ready;
+      });
+    } catch (error) {
+      if (this.book === book) this.destroy();
+      throw error;
+    }
   }
 
   async render(container: HTMLElement): Promise<void> {
-    if (!this.book) throw new Error("EpubAdapter: load() must be called before render()");
-    const rendition = this.book.renderTo(container, {
-      width: this.options.width ?? "100%",
-      height: this.options.height ?? "100%",
-      flow: this.options.flow ?? "paginated",
+    const book = this.book;
+    if (!book)
+      throw new Error("EpubAdapter: load() must be called before render()");
+    if (this.rendition) throw new Error("EpubAdapter: already rendered");
+    await this.useBook(book, async () => {
+      const rendition = book.renderTo(container, {
+        width: this.options.width ?? "100%",
+        height: this.options.height ?? "100%",
+        flow: this.options.flow ?? "paginated",
+      });
+      this.rendition = rendition;
+      rendition.hooks.content.register(this.applyCss);
+      // Annotations are reattached by epub.js's earlier render hook.
+      rendition.hooks.render.register(this.decorateMarks);
+      rendition.on("selected", (cfiRange: string, contents: Contents) => {
+        if (this.rendition !== rendition) return;
+        const selection: DocumentSelection = {
+          format: "epub",
+          position: { format: "epub", cfiRange },
+          content: { text: contents.range(cfiRange).toString() },
+          hide: () => contents.window.getSelection()?.removeAllRanges(),
+        };
+        this.selectionHandlers.forEach((handler) => handler(selection));
+      });
+      await rendition.display();
     });
-    this.rendition = rendition;
-    // Forward selections.
-    rendition.on("selected", (cfiRange: string, contents: unknown) => {
-      const text = this.extractText(cfiRange);
-      const selection: DocumentSelection = {
-        format: "epub",
-        position: { format: "epub", cfiRange },
-        content: text ? { text } : undefined,
-      };
-      this.selectionHandlers.forEach((h) => h(selection));
-    });
-    await rendition.display();
   }
 
   destroy(): void {
-    if (this.rendition) {
-      try {
-        this.rendition.destroy();
-      } catch {
-        /* ignore */
-      }
-      this.rendition = null;
-    }
-    if (this.book) {
-      try {
-        this.book.destroy();
-      } catch {
-        /* ignore */
-      }
-      this.book = null;
-    }
+    this.generation += 1;
+    const book = this.book;
+    this.book = null;
+    this.rendition = null;
+    this.css = "";
+    this.appliedStyles.clear();
+    // Book.destroy also destroys its rendition; don't destroy it twice.
+    if (book && !this.pending.has(book)) book.destroy();
   }
 
   async next(): Promise<void> {
-    await this.rendition?.next();
+    const book = this.book;
+    const rendition = this.rendition;
+    if (book && rendition) await this.useBook(book, () => rendition.next());
   }
 
   async prev(): Promise<void> {
-    await this.rendition?.prev();
+    const book = this.book;
+    const rendition = this.rendition;
+    if (book && rendition) await this.useBook(book, () => rendition.prev());
   }
 
   async display(target?: string | number): Promise<void> {
-    if (!this.rendition) return;
-    await this.rendition.display(target as never);
+    const book = this.book;
+    const rendition = this.rendition;
+    if (book && rendition)
+      await this.useBook(book, () => rendition.display(target as string));
   }
 
-  currentLocation(): { page?: number; cfi?: string; percentage?: number } | null {
+  currentLocation(): {
+    page?: number;
+    cfi?: string;
+    percentage?: number;
+  } | null {
     const loc = this.rendition?.location;
     if (!loc) return null;
     return {
       cfi: loc.start?.cfi,
       percentage: loc.start?.percentage,
+      page: loc.start?.displayed?.page,
     };
   }
 
@@ -106,23 +165,17 @@ export class EpubAdapter implements DocumentAdapter {
     };
   }
 
-  addHighlight(position: DocumentPosition, style?: Record<string, string>): string {
-    const cfi = position.cfiRange;
-    if (!cfi || !this.rendition) return "";
-    const className = "epub-highlight";
-    this.rendition.annotations.highlight(cfi, {}, (e: Event) => {
-      /* click handler placeholder */
-    }, className, style ?? { fill: "yellow", "fill-opacity": "0.3", mixBlendMode: "multiply" });
-    return cfi;
+  addHighlight(
+    position: DocumentPosition,
+    style?: Record<string, string>,
+  ): string {
+    if (position.format !== "epub" || !position.cfiRange || !this.rendition)
+      return "";
+    return this.annotate("highlight", position.cfiRange, {}, style);
   }
 
   removeHighlight(handle: string): void {
-    if (!this.rendition || !handle) return;
-    try {
-      this.rendition.annotations.remove(handle, "highlight");
-    } catch {
-      /* ignore */
-    }
+    this.removeAnnotation(handle, "highlight");
   }
 
   annotate(
@@ -133,134 +186,190 @@ export class EpubAdapter implements DocumentAdapter {
   ): string {
     if (!this.rendition || !cfiRange) return "";
     const t = type || "highlight";
-    const className = `epub-${t}`;
-    const cb = () => {
-      /* annotation interaction placeholder */
-    };
-    const defaultStyles: Record<string, string | number> =
-      t === "underline"
-        ? { stroke: "blue", "stroke-opacity": 0.8 }
-        : t === "note"
-          ? { fill: "rgba(255, 200, 100, 0.4)" }
-          : { fill: "rgba(255, 226, 143, 0.5)", "fill-opacity": 0.4, mixBlendMode: "multiply" };
-    try {
-      if (t === "underline") {
-        this.rendition.annotations.underline(cfiRange, data ?? {}, cb, className, styles ?? defaultStyles);
-      } else if (t === "mark") {
-        this.rendition.annotations.mark(cfiRange, data ?? {}, cb);
-      } else {
-        this.rendition.annotations.highlight(cfiRange, data ?? {}, cb, className, styles ?? defaultStyles);
-      }
-    } catch {
-      /* ignore */
+    if (!["highlight", "text", "underline", "mark", "note"].includes(t)) {
+      throw new Error(`EpubAdapter: unsupported annotation type "${t}"`);
+    }
+    // epub.js keys annotations by CFI + type. Remove before replacing to avoid
+    // leaving an orphaned SVG mark in the current view.
+    this.removeAnnotation(cfiRange, t);
+    if (t === "underline") {
+      this.rendition.annotations.underline(
+        cfiRange,
+        data ?? {},
+        undefined,
+        "epub-underline",
+        {
+          stroke: "blue",
+          "stroke-opacity": 0.8,
+          ...styles,
+        },
+      );
+    } else if (t === "mark") {
+      this.rendition.annotations.mark(cfiRange, data ?? {});
+      this.rendition
+        .views()
+        .forEach((view) =>
+          this.decorateMarks(view as unknown as { element: HTMLElement }),
+        );
+    } else {
+      this.rendition.annotations.highlight(
+        cfiRange,
+        data ?? {},
+        undefined,
+        `epub-${t}`,
+        {
+          fill: "yellow",
+          "fill-opacity": 0.3,
+          "mix-blend-mode": "multiply",
+          ...styles,
+        },
+      );
     }
     return cfiRange;
   }
 
   removeAnnotation(cfiRange: string, type: string): void {
     if (!this.rendition || !cfiRange) return;
-    const t = type === "underline" ? "underline" : type === "mark" ? "mark" : "highlight";
-    try {
-      this.rendition.annotations.remove(cfiRange, t);
-    } catch {
-      /* ignore */
-    }
+    const t =
+      type === "underline"
+        ? "underline"
+        : type === "mark"
+          ? "mark"
+          : "highlight";
+    this.rendition.annotations.remove(cfiRange, t);
   }
 
   async getOutline(): Promise<unknown[]> {
-    if (!this.book) return [];
-    try {
-      const toc = await this.book.loaded.navigation;
-      return (toc as { toc?: unknown[] })?.toc ?? [];
-    } catch {
-      return [];
-    }
+    const book = this.book;
+    if (!book) return [];
+    const navigation = await book.loaded.navigation;
+    return this.book === book ? navigation.toc : [];
   }
 
-  async search(query: string): Promise<Array<{ cfi?: string; excerpt?: string; href?: string }>> {
-    if (!this.book || !query) return [];
-    const results: Array<{ cfi?: string; excerpt?: string; href?: string }> = [];
-    const spine = (this.book.spine as { spineItems?: Array<{ href: string; load: (fn: (u: string) => Promise<unknown>) => Promise<unknown>; unload: () => void; find: (q: string) => Array<{ cfi: string; excerpt: string }> }> }).spineItems ?? [];
-    for (const item of spine) {
-      try {
-        await item.load(this.book.load.bind(this.book));
-        const matches = item.find(query) ?? [];
-        for (const m of matches) {
-          results.push({ cfi: m.cfi, excerpt: m.excerpt, href: item.href });
-        }
-        item.unload();
-      } catch {
+  async search(
+    query: string,
+  ): Promise<Array<{ cfi?: string; excerpt?: string; href?: string }>> {
+    const book = this.book;
+    if (!book || !query.trim()) return [];
+    return this.useBook(book, async () => {
+      const results: Array<{ cfi?: string; excerpt?: string; href?: string }> =
+        [];
+      // Don't load/unload the live spine sections: concurrent searches and
+      // navigation use them too. Search isolated section documents instead.
+      const items: Array<{ href: string; constructor: Function }> = [];
+      book.spine.each((item: { href: string; constructor: Function }) =>
+        items.push(item),
+      );
+      for (const item of items) {
+        if (this.book !== book) return [];
+        // Reuse epub.js's Section constructor without importing a second copy
+        // of the renderer. Its published Section declarations are incomplete.
+        const Section = item.constructor as new (item: unknown) => {
+          load(request: Function): Promise<unknown>;
+          find(query: string): Array<{ cfi: string; excerpt: string }>;
+          destroy(): void;
+        };
+        const section = new Section(item);
         try {
-          item.unload();
-        } catch {
-          /* ignore */
+          await section.load(book.load.bind(book));
+          for (const match of section.find(query.trim())) {
+            results.push({ ...match, href: item.href });
+          }
+        } finally {
+          section.destroy();
         }
       }
-    }
-    return results;
+      return this.book === book ? results : [];
+    });
   }
 
+  /** Replace reader overrides, including removal of previously applied props. */
   setStyles(styles: Record<string, string | number>): void {
-    if (!this.rendition) return;
-    try {
-      const themes = this.rendition.themes as {
-        fontSize?: (size: string) => void;
-        fontFamily?: (name: string) => void;
-        register?: (name: string, styles: Record<string, unknown>) => void;
-        select?: (name: string) => void;
-      };
-      if (styles.fontSize != null && typeof themes.fontSize === "function") {
-        themes.fontSize(String(styles.fontSize));
-      }
-      if (styles.fontFamily != null && typeof themes.fontFamily === "function") {
-        themes.fontFamily(String(styles.fontFamily));
-      }
-      const css: Record<string, unknown> = {};
-      if (styles.lineHeight != null) css["line-height"] = styles.lineHeight;
-      if (styles.color != null) css.color = styles.color;
-      if (styles.background != null) css.background = styles.background;
-      if (Object.keys(css).length) {
-        themes.register?.("custom", css);
-        themes.select?.("custom");
-      }
-    } catch {
-      /* ignore */
+    const themes = this.rendition?.themes;
+    if (!themes) return;
+    const css: Record<string, string> = {};
+    for (const [key, property] of Object.entries({
+      fontSize: "font-size",
+      fontFamily: "font-family",
+      lineHeight: "line-height",
+      color: "color",
+      background: "background",
+    })) {
+      const value = styles[key];
+      if (value != null)
+        css[property] =
+          key === "fontSize" && typeof value === "number"
+            ? `${value}px`
+            : String(value);
     }
+    // removeOverride exists in epub.js but is missing from its declarations.
+    const removable = themes as typeof themes & {
+      removeOverride(name: string): void;
+    };
+    for (const property of this.appliedStyles) {
+      if (!(property in css)) removable.removeOverride(property);
+    }
+    for (const [property, value] of Object.entries(css))
+      themes.override(property, value, true);
+    this.appliedStyles = new Set(Object.keys(css));
   }
 
+  /** Replace custom CSS in both current and future section documents. */
   injectCss(css: string): void {
-    if (!this.rendition) return;
-    try {
-      // Inject into every (current and future) section document.
-      const hook = (contents: { document?: Document }) => {
-        const doc = contents?.document;
-        if (!doc?.head) return;
-        const style = doc.createElement("style");
-        style.textContent = css;
-        doc.head.appendChild(style);
-      };
-      this.rendition.hooks.content.register(hook);
-      // Also inject into currently rendered views.
-      const views = (this.rendition as { views?: () => Array<{ document?: Document }> }).views?.() ?? [];
-      for (const v of views) {
-        const doc = v.document;
-        if (!doc?.head) continue;
-        const style = doc.createElement("style");
-        style.textContent = css;
-        doc.head.appendChild(style);
-      }
-    } catch {
-      /* ignore */
-    }
+    this.css = css;
+    // getContents() returns Contents[] at runtime (the published typings say
+    // Contents). views() is a Views collection, not an iterable array.
+    const contents = (this.rendition?.getContents() ??
+      []) as unknown as Contents[];
+    for (const content of contents) this.applyCss(content);
   }
 
-  private extractText(cfiRange: string): string | undefined {
-    if (!this.rendition) return undefined;
-    try {
-      const range = this.rendition.getRange(cfiRange);
-      return range?.toString();
-    } catch {
-      return undefined;
+  private applyCss = ({ document: doc }: { document: Document }): void => {
+    let style = doc.querySelector<HTMLStyleElement>(
+      "style[data-epub-reader-css]",
+    );
+    if (!this.css) {
+      style?.remove();
+      return;
     }
-  }
+    if (!style) {
+      style = doc.createElement("style");
+      style.dataset.epubReaderCss = "";
+      doc.head.appendChild(style);
+    }
+    style.textContent = this.css;
+  };
+
+  private decorateMarks = ({ element }: { element: HTMLElement }): void => {
+    // epub.js creates empty anchors outside the iframe; they need visible
+    // content and sizing in the host document to be usable.
+    for (const mark of Array.from(
+      element.querySelectorAll<HTMLAnchorElement>('[ref="epubjs-mk"]'),
+    )) {
+      if (mark.hasAttribute("aria-label")) continue;
+      mark.textContent = "●";
+      mark.setAttribute("aria-label", mark.dataset.note || "EPUB annotation");
+      mark.title = mark.getAttribute("aria-label")!;
+      mark.tabIndex = 0;
+      mark.setAttribute("role", "button");
+      Object.assign(mark.style, {
+        display: "inline-flex",
+        width: "18px",
+        height: "18px",
+        color: "#2563eb",
+        fontSize: "18px",
+        lineHeight: "18px",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: "pointer",
+        zIndex: "2",
+      });
+      mark.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          mark.click();
+        }
+      });
+    }
+  };
 }
