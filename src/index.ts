@@ -227,3 +227,28 @@ export type {
   LeftPanelUtils,
 };
 export * from "./types";
+
+// Format-agnostic core
+export type {
+  DocumentFormat,
+  DocumentPosition,
+  DocumentSelection,
+  DocumentHighlight,
+  DocumentHighlighterProps,
+  DocumentAdapter,
+} from "./core/types";
+export { DocumentHighlighterContext, useDocumentHighlighterContext } from "./core/DocumentContext";
+export type { DocumentHighlighterContextValue } from "./core/DocumentContext";
+
+// EPUB support
+export { EpubHighlighter } from "./components/EpubHighlighter";
+export type {
+  EpubHighlighterProps,
+  EpubHighlighterHandle,
+  EpubHighlighterStyleOptions,
+  EpubHighlighterFeatures,
+} from "./components/EpubHighlighter";
+export { EpubAdapter } from "./adapters/EpubAdapter";
+export type { EpubAdapterOptions } from "./adapters/EpubAdapter";
+export { PdfAdapter } from "./adapters/PdfAdapter";
+export type { PdfAdapterOptions } from "./adapters/PdfAdapter";

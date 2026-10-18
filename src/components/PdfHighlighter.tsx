@@ -15,6 +15,8 @@ import {
   PdfSearchOptions,
   PdfHighlighterUtils,
 } from "../contexts/PdfHighlighterContext";
+import { DocumentHighlighterContext } from "../core/DocumentContext";
+import { PdfAdapter } from "../adapters/PdfAdapter";
 import { scaledToViewport, viewportPositionToScaled } from "../lib/coordinates";
 import { createDarkModeColorMap, type RenderColorMap } from "../lib/dark-mode";
 import { applyContextRecolor } from "../lib/recolor-context";
@@ -655,6 +657,8 @@ export const PdfHighlighter = ({
   const settleScrollListenerRef = useRef<(() => void) | null>(null);
   const findControllerRef = useRef<InstanceType<typeof PDFFindController> | null>(null);
   const viewerRef = useRef<InstanceType<typeof PDFViewer> | null>(null);
+  const pdfAdapterRef = useRef<PdfAdapter | null>(null);
+  const [pdfAdapter, setPdfAdapter] = useState<PdfAdapter | null>(null);
   // Count of currently-selected highlights (toolbar open) — used to suppress
   // hover tips while any toolbar is showing.
   const selectedHighlightCountRef = useRef(0);
@@ -766,6 +770,15 @@ export const PdfHighlighter = ({
     linkServiceRef.current.setDocument(pdfDocument);
     linkServiceRef.current.setViewer(viewerRef.current);
     setIsViewerReady(true);
+    pdfAdapterRef.current?.destroy();
+    const adapter = new PdfAdapter({
+      viewer: viewerRef.current,
+      pdfDocument,
+      eventBus: eventBusRef.current,
+      findController: findControllerRef.current,
+    });
+    pdfAdapterRef.current = adapter;
+    setPdfAdapter(adapter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdfDocument, recolorKey]);
 
@@ -1855,6 +1868,23 @@ export const PdfHighlighter = ({
   };
 
   return (
+    <DocumentHighlighterContext.Provider
+      value={{
+        adapter: pdfAdapter,
+        highlights: highlights as unknown as Array<import("../core/types").DocumentHighlight>,
+        scrollToHighlight: (h) => {
+          try {
+            const anyH = h as unknown as { id?: string };
+            const target = highlights.find((x) => x.id === anyH?.id);
+            if (target) scrollToHighlight(target);
+          } catch {
+            /* ignore */
+          }
+        },
+        setTip: () => undefined,
+        clearTip: () => undefined,
+      }}
+    >
     <PdfHighlighterContext.Provider value={pdfHighlighterUtils}>
       <div
         ref={containerNodeRef}
@@ -1962,5 +1992,6 @@ export const PdfHighlighter = ({
         )}
       </div>
     </PdfHighlighterContext.Provider>
+    </DocumentHighlighterContext.Provider>
   );
 };

@@ -80,6 +80,7 @@
   },
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.14",
+    "epubjs": "^0.3.93",
     "lucide-react": "^0.559.0",
     "pdf-lib": "^1.17.1",
     "react-rnd": "10.5.2"
