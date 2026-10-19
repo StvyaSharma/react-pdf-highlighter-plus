@@ -69,6 +69,8 @@
     "build:copy-styles": "cp -r ./src/style ./dist/esm",
     "build:example": "(cd ./example && npm install && tsc && vite build && mkdir -p \"../public/\" && cp -r example-app ../public/)",
     "build:docs": "npx typedoc",
+    "build:cloudflare": "cd example && tsc && vite build --base / --outDir ../dist/cloudflare --emptyOutDir",
+    "deploy:cloudflare": "npm run build:cloudflare && wrangler deploy",
     "test:size": "size-limit",
     "clean": "rm -rf dist public node_modules package-lock.json",
     "build:webview": "node scripts/build-webview.mjs",
@@ -138,7 +140,8 @@
     "typedoc": "latest",
     "typedoc-theme-category-nav": "latest",
     "typescript": "^5.3.2",
-    "vite": "^5.3.3"
+    "vite": "^5.3.3",
+    "wrangler": "^4.151.1"
   },
   "peerDependenciesMeta": {
     "react-native": {

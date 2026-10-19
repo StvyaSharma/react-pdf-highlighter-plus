@@ -6,6 +6,8 @@ export default defineConfig(({ command }) => ({
   build: {
     target: "esnext",
     outDir: "example-app",
+    // EPUB.js opens archive URLs; it cannot infer an EPUB from Vite's data URLs.
+    assetsInlineLimit: 0,
   },
   plugins: [reactRefresh()],
   server: {

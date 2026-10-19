@@ -58,6 +58,11 @@
 ## Quick Links
 
 EPUB support: [reader usage, demo, and browser validation](docs/epub.md).
+
+Run `npm run dev` to try both web examples: [PDF](http://localhost:3000/)
+and [EPUB](http://localhost:3000/?format=epub). Use the demo links to switch
+between them. The EPUB example includes a sample book and supports opening
+your own `.epub` files.
 React Native: [bundled WebView reader, shared logic, and error presentation](docs/react-native.md).
 
 | Resource | Link |
@@ -621,6 +626,21 @@ cd react-pdf-highlighter-plus
 npm install
 npm run dev
 ```
+
+### Deploy the web demos to Cloudflare
+
+The PDF and EPUB demos are a browser-only React/Vite app, served using
+[Cloudflare Workers static assets](https://developers.cloudflare.com/workers/static-assets/).
+
+```bash
+npx wrangler login
+npm run deploy:cloudflare
+```
+
+This builds the example at the site root and deploys the Worker configured in
+`wrangler.jsonc`. Open `/` for PDF or `/?format=epub` for EPUB.
+Use `npm run build:cloudflare` to build without deploying. The existing
+GitHub Pages build keeps its original URL prefix.
 
 ---
 

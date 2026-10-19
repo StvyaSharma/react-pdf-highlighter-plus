@@ -5,8 +5,11 @@ WebView integration, see [shared EPUB logic and React Native](react-native.md).
 
 `EpubHighlighter` renders EPUB documents with EPUB.js. Run `npm ci` and
 `npm run dev`, then open <http://localhost:3000/?format=epub> for the EPUB demo.
-The demo includes an original three-chapter sample and accepts local `.epub`
-files. A URL can be supplied with `?format=epub&epub=<encoded-url>`.
+The demo includes the complete 61-chapter *Pride and Prejudice* by Jane Austen,
+from [Project Gutenberg](https://www.gutenberg.org/ebooks/1342), bundled locally
+with its original license and notices. It accepts local `.epub` files, too.
+A URL can be supplied with `?format=epub&epub=<encoded-url>`.
+The original three-chapter fixture is retained for automated regression checks.
 
 ## Sources and readiness
 

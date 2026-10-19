@@ -216,6 +216,9 @@ export function Header({
             </div>
             <span className="text-lg font-semibold">Highlighter</span>
           </div>
+          <Button variant="outline" size="sm" asChild>
+            <a href="?format=epub">EPUB demo</a>
+          </Button>
         </div>
 
         {/* Right section - Zoom controls and export */}
