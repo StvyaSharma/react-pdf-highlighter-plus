@@ -76,6 +76,7 @@ export function EpubDemo() {
   const [settingsOpen, setSettingsOpen] = React.useState(false);
   const [activeHref, setActiveHref] = React.useState("");
   const searchRequest = React.useRef(0);
+  const resumeLocation = React.useRef<string>();
   const styles = React.useMemo(
     () => ({
       fontSize,
@@ -112,6 +113,7 @@ export function EpubDemo() {
     sample: boolean,
   ) => {
     searchRequest.current++;
+    resumeLocation.current = undefined;
     setReady(false);
     setStatus("Opening your book…");
     setHighlights([]);
@@ -126,6 +128,12 @@ export function EpubDemo() {
     setIsSample(sample);
     setSource(value);
     setTab("contents");
+  };
+  const changeFlow = (next: string) => {
+    if (!ready || next === flow) return;
+    resumeLocation.current = ref.current?.adapter?.currentLocation()?.cfi;
+    setReady(false);
+    setFlow(next);
   };
   const renderOutline = (items: NavItem[]): React.ReactNode => (
     <ul className="epub-contents">
@@ -482,19 +490,15 @@ export function EpubDemo() {
             <div className="epub-layout" aria-label="Reading layout">
               <button
                 aria-pressed={flow === "paginated"}
-                onClick={() => {
-                  setReady(false);
-                  setFlow("paginated");
-                }}
+                disabled={!ready}
+                onClick={() => changeFlow("paginated")}
               >
                 Pages
               </button>
               <button
                 aria-pressed={flow === "scrolled-doc"}
-                onClick={() => {
-                  setReady(false);
-                  setFlow("scrolled-doc");
-                }}
+                disabled={!ready}
+                onClick={() => changeFlow("scrolled-doc")}
               >
                 Scroll
               </button>
@@ -508,7 +512,23 @@ export function EpubDemo() {
               flow={flow}
               styles={styles}
               customCss={customCss}
-              onReady={(adapter) => {
+              onReady={async (adapter) => {
+                const target = resumeLocation.current;
+                resumeLocation.current = undefined;
+                if (target) {
+                  try {
+                    await adapter.display(target);
+                  } catch {
+                    if (ref.current?.adapter === adapter) {
+                      setReady(true);
+                      setStatus(
+                        "Could not restore your position. Choose a chapter to continue.",
+                      );
+                    }
+                    return;
+                  }
+                }
+                if (ref.current?.adapter !== adapter) return;
                 setReady(true);
                 setStatus("Ready to read");
                 void adapter.getOutline().then((toc) => {
@@ -566,6 +586,23 @@ export function EpubDemo() {
             <span className="epub-reader-status" role="status">
               {status}
             </span>
+            <button
+              className="epub-button epub-capture-selection"
+              disabled={!ready}
+              onPointerDown={(event) => event.preventDefault()}
+              onClick={() =>
+                void run(async () => {
+                  const captured =
+                    await ref.current?.reader?.captureSelection();
+                  if (!captured)
+                    setStatus(
+                      "Select text in the book first, then choose Annotate selection.",
+                    );
+                })
+              }
+            >
+              Annotate selection
+            </button>
             <div className="epub-page-controls">
               <button
                 className="epub-icon"

@@ -74,7 +74,8 @@
     "test:size": "size-limit",
     "clean": "rm -rf dist public node_modules package-lock.json",
     "build:webview": "node scripts/build-webview.mjs",
-    "test:reader": "node scripts/test-reader.mjs"
+    "test:reader": "node scripts/test-reader.mjs",
+    "test:epub-demo": "playwright test"
   },
   "size-limit": [
     {
@@ -107,6 +108,7 @@
     "url": "git+https://github.com/QuocVietHa08/react-pdf-highlighter-plus"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@radix-ui/react-collapsible": "^1.1.12",
     "@radix-ui/react-dialog": "^1.1.15",
     "@radix-ui/react-dropdown-menu": "^2.1.16",

@@ -77,7 +77,10 @@ export function EpubAnnotationTools({
           aria-label="Annotation tools"
         >
           <h2>Annotate a passage</h2>
-          <p>Choose a tool, then select text in the book.</p>
+          <p>
+            Choose a tool and select text. Use Annotate selection if it isn’t
+            saved automatically.
+          </p>
           <div className="epub-tool-grid">
             {annotationTools.map(({ id, label, icon: Icon }) => (
               <button

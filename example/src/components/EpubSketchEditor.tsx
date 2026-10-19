@@ -153,6 +153,9 @@ export function EpubSketchEditor({
   const [width, setWidth] = React.useState(4);
   const [draft, setDraft] = React.useState<SketchShape | null>(null);
   const [error, setError] = React.useState("");
+  const [readingImage, setReadingImage] = React.useState(false);
+  const imageReadId = React.useRef(0);
+  const activePointer = React.useRef<number | null>(null);
   const pending = React.useRef<Extract<
     SketchShape,
     { points: Point[] }
@@ -183,6 +186,7 @@ export function EpubSketchEditor({
   };
   const cancelStroke = () => {
     pending.current = null;
+    activePointer.current = null;
     setDraft(null);
   };
   return (
@@ -198,7 +202,7 @@ export function EpubSketchEditor({
       <form
         onSubmit={(event) => {
           event.preventDefault();
-          if (!note.trim() && !shapes.length) return;
+          if (readingImage || (!note.trim() && !shapes.length)) return;
           onSave({
             ...annotation,
             content: {
@@ -307,13 +311,15 @@ export function EpubSketchEditor({
                 if (event.button !== 0 || pending.current) return;
                 event.preventDefault();
                 event.currentTarget.setPointerCapture(event.pointerId);
+                activePointer.current = event.pointerId;
                 const p = point(event);
                 pending.current = { tool, color, width, points: [p, p] };
                 setDraft(pending.current);
               }}
               onPointerMove={(event) => {
                 const current = pending.current;
-                if (!current) return;
+                if (!current || activePointer.current !== event.pointerId)
+                  return;
                 const p = point(event);
                 pending.current = {
                   ...current,
@@ -326,7 +332,8 @@ export function EpubSketchEditor({
               }}
               onPointerUp={(event) => {
                 const current = pending.current;
-                if (!current) return;
+                if (!current || activePointer.current !== event.pointerId)
+                  return;
                 const p = point(event);
                 const completed = {
                   ...current,
@@ -345,8 +352,12 @@ export function EpubSketchEditor({
                   setShapes((items) => [...items, completed]);
                 cancelStroke();
               }}
-              onPointerCancel={cancelStroke}
-              onLostPointerCapture={cancelStroke}
+              onPointerCancel={(event) => {
+                if (activePointer.current === event.pointerId) cancelStroke();
+              }}
+              onLostPointerCapture={(event) => {
+                if (activePointer.current === event.pointerId) cancelStroke();
+              }}
             />
             <div className="epub-sketch-actions">
               <button
@@ -393,6 +404,8 @@ export function EpubSketchEditor({
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (!file) return;
+                const request = ++imageReadId.current;
+                setReadingImage(false);
                 if (
                   !["image/png", "image/jpeg", "image/webp"].includes(
                     file.type,
@@ -402,6 +415,8 @@ export function EpubSketchEditor({
                   setError("Choose a PNG, JPEG, or WebP image under 5 MB.");
                   return;
                 }
+                setReadingImage(true);
+                setError("");
                 try {
                   const src = await new Promise<string>((resolve, reject) => {
                     const reader = new FileReader();
@@ -409,12 +424,22 @@ export function EpubSketchEditor({
                     reader.onerror = reject;
                     reader.readAsDataURL(file);
                   });
-                  if (!mounted.current) return;
+                  // MIME and extension alone do not prove an image can render.
+                  const decoded = new window.Image();
+                  decoded.src = src;
+                  await decoded.decode();
+                  if (!decoded.naturalWidth || !decoded.naturalHeight)
+                    throw new Error("Empty image");
+                  if (!mounted.current || request !== imageReadId.current)
+                    return;
                   setShapes((items) => [...items, { tool: "image", src }]);
                   setError("");
                 } catch {
-                  if (mounted.current)
+                  if (mounted.current && request === imageReadId.current)
                     setError("Could not read that image. Try another file.");
+                } finally {
+                  if (mounted.current && request === imageReadId.current)
+                    setReadingImage(false);
                 }
               }}
             />
@@ -433,6 +458,7 @@ export function EpubSketchEditor({
           />
         </label>
         {error && <p role="alert">{error}</p>}
+        {readingImage && <p role="status">Reading image…</p>}
         <div className="epub-editor-footer">
           <button type="button" className="epub-button" onClick={onCancel}>
             Cancel
@@ -440,7 +466,7 @@ export function EpubSketchEditor({
           <button
             type="submit"
             className="epub-button epub-primary"
-            disabled={!note.trim() && !shapes.length}
+            disabled={readingImage || (!note.trim() && !shapes.length)}
           >
             Save annotation
           </button>

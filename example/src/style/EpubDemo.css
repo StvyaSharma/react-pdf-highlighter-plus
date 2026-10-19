@@ -882,3 +882,20 @@
     padding: 16px;
   }
 }
+.epub-reader-footer {
+  flex-wrap: wrap;
+  padding: 10px 0;
+}
+.epub-capture-selection {
+  font-size: 11px !important;
+}
+@media (max-width: 760px) {
+  .epub-capture-selection {
+    order: 3;
+    justify-content: center;
+    width: 100%;
+  }
+  .epub-fab {
+    bottom: 120px;
+  }
+}

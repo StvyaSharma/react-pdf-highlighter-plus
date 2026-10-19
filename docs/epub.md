@@ -18,6 +18,9 @@ then select a passage. Highlight, underline, and mark apply immediately. Notes
 open a text editor. Draw, rectangle, circle, arrow, area highlight, image, and
 signature open a sketch editor attached to that passage. The editor supports
 ink color and width, multiple shapes, image upload, undo, and clearing the canvas.
+If your browser does not capture the selection automatically, press **Annotate
+selection** below the book. This is required in sandboxed WebKit frames; book
+scripts remain disabled.
 
 These sketches are attachments, rather than overlays on EPUB pages. Their
 passage links use EPUB CFIs, so font changes and page/scroll layout changes keep
@@ -26,6 +29,27 @@ an annotation's passage. Compact notes hides sketch previews and shortens text.
 Annotations and image data remain in memory for the current session.
 The demo stores sketch and comment data in `DocumentHighlight.content`; this
 adds no fixed-page drawing API to the EPUB renderer or native example.
+
+### Repeatable demo regression tests
+
+```sh
+npm ci
+npx playwright install chromium webkit
+npm run test:epub-demo -- --project=chromium --project=webkit
+```
+
+The command builds and serves the production app, then runs 20 scenarios in
+each browser. To check a deployed copy, set `EPUB_DEMO_URL` to the site's origin:
+
+```sh
+EPUB_DEMO_URL=https://react-pdf-highlighter-plus-demo.business-e3d.workers.dev \
+  npm run test:epub-demo -- --project=chromium --project=webkit
+```
+
+Firefox is also configured (`--project=firefox`) but its test browser could not
+launch in the validation environment. See [validation results](epub-demo-validation.md)
+for coverage, fixes, and limitations. Failure screenshots and traces are saved
+in `test-results/`; the HTML report is in `playwright-report/`.
 
 ## Sources and readiness
 
