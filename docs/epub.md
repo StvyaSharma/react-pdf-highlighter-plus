@@ -11,6 +11,22 @@ with its original license and notices. It accepts local `.epub` files, too.
 A URL can be supplied with `?format=epub&epub=<encoded-url>`.
 The original three-chapter fixture is retained for automated regression checks.
 
+### Annotation tools in the web demo
+
+Open the floating **+** button at the lower right of the book and choose a tool,
+then select a passage. Highlight, underline, and mark apply immediately. Notes
+open a text editor. Draw, rectangle, circle, arrow, area highlight, image, and
+signature open a sketch editor attached to that passage. The editor supports
+ink color and width, multiple shapes, image upload, undo, and clearing the canvas.
+
+These sketches are attachments, rather than overlays on EPUB pages. Their
+passage links use EPUB CFIs, so font changes and page/scroll layout changes keep
+them anchored to the same text. Open **Notes** to view, edit, remove, or return to
+an annotation's passage. Compact notes hides sketch previews and shortens text.
+Annotations and image data remain in memory for the current session.
+The demo stores sketch and comment data in `DocumentHighlight.content`; this
+adds no fixed-page drawing API to the EPUB renderer or native example.
+
 ## Sources and readiness
 
 `source` accepts a URL, an `ArrayBuffer`, or `{ url, ...options }`. Object

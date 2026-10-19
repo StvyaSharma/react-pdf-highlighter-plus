@@ -20,7 +20,17 @@ import {
   EpubHighlighter,
   type EpubHighlighterHandle,
 } from "../../src/components/EpubHighlighter";
-import type { DocumentHighlight } from "../../src/core/types";
+import {
+  EpubAnnotationTools,
+  annotationTools,
+  toolLabel,
+  type AnnotationTool,
+} from "./components/EpubAnnotationTools";
+import {
+  EpubSketchEditor,
+  SketchPreview,
+  type EpubAnnotation,
+} from "./components/EpubSketchEditor";
 import sampleBook from "./assets/pride-and-prejudice.epub?url";
 import "./style/EpubDemo.css";
 
@@ -41,7 +51,9 @@ export function EpubDemo() {
     externalSource ? "EPUB document" : bookTitle,
   );
   const [isSample, setIsSample] = React.useState(!externalSource);
-  const [highlights, setHighlights] = React.useState<DocumentHighlight[]>([]);
+  const [highlights, setHighlights] = React.useState<EpubAnnotation[]>([]);
+  const [draft, setDraft] = React.useState<EpubAnnotation | null>(null);
+  const [compactNotes, setCompactNotes] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const [results, setResults] = React.useState<SearchResult[]>([]);
   const [searching, setSearching] = React.useState(false);
@@ -54,7 +66,8 @@ export function EpubDemo() {
   const [lineHeight, setLineHeight] = React.useState(1.7);
   const [dark, setDark] = React.useState(false);
   const [flow, setFlow] = React.useState("paginated");
-  const [annotationType, setAnnotationType] = React.useState("highlight");
+  const [annotationType, setAnnotationType] =
+    React.useState<AnnotationTool>("highlight");
   const [customCss, setCustomCss] = React.useState("p { text-align: start; }");
   const [tab, setTab] = React.useState<Tab>("contents");
   const [sidebarOpen, setSidebarOpen] = React.useState(
@@ -102,6 +115,7 @@ export function EpubDemo() {
     setReady(false);
     setStatus("Opening your book…");
     setHighlights([]);
+    setDraft(null);
     setResults([]);
     setOutline([]);
     setSearched(false);
@@ -368,20 +382,58 @@ export function EpubDemo() {
                         </p>
                       </div>
                     )}
-                    <ul className="epub-notes" aria-label="Annotations">
+                    <ul
+                      className={`epub-notes${compactNotes ? " epub-notes-compact" : ""}`}
+                      aria-label="Annotations"
+                    >
                       {highlights.map((highlight) => (
                         <li key={highlight.id}>
-                          <button
-                            className="epub-note-content"
-                            onClick={() =>
-                              void navigate(highlight.position.cfiRange)
-                            }
-                          >
-                            <small>{highlight.type}</small>
-                            <span>
-                              {String(highlight.content?.text ?? "Annotation")}
-                            </span>
-                          </button>
+                          <div className="epub-note-body">
+                            <button
+                              className="epub-note-content"
+                              onClick={() =>
+                                void navigate(highlight.position.cfiRange)
+                              }
+                            >
+                              <small>
+                                {toolLabel(
+                                  highlight.content?.tool ||
+                                    highlight.type ||
+                                    "highlight",
+                                )}
+                              </small>
+                              <span>
+                                {String(
+                                  highlight.content?.text ?? "Annotation",
+                                )}
+                              </span>
+                            </button>
+                            {highlight.content?.note && (
+                              <p className="epub-note-comment">
+                                {highlight.content.note}
+                              </p>
+                            )}
+                            {highlight.content?.sketch && (
+                              <button
+                                className="epub-sketch-preview-button"
+                                aria-label="Edit passage sketch"
+                                onClick={() => setDraft(highlight)}
+                              >
+                                <SketchPreview
+                                  sketch={highlight.content.sketch}
+                                />
+                              </button>
+                            )}
+                            {(highlight.content?.tool === "note" ||
+                              highlight.content?.sketch) && (
+                              <button
+                                className="epub-text-button epub-edit-note"
+                                onClick={() => setDraft(highlight)}
+                              >
+                                Edit annotation
+                              </button>
+                            )}
+                          </div>
                           <button
                             className="epub-icon"
                             aria-label={`Remove annotation ${highlight.id}`}
@@ -469,18 +521,24 @@ export function EpubDemo() {
                 setStatus(error.message);
               }}
               onSelection={(selection) => {
-                if (!selection.position.cfiRange) return;
-                setHighlights((items) => [
-                  ...items,
-                  {
-                    id: crypto.randomUUID(),
-                    type: annotationType,
-                    position: selection.position,
-                    content: selection.content,
-                  },
-                ]);
+                if (!selection.position.cfiRange || draft) return;
+                const annotation: EpubAnnotation = {
+                  id: crypto.randomUUID(),
+                  type: ["highlight", "underline", "mark"].includes(
+                    annotationType,
+                  )
+                    ? annotationType
+                    : "note",
+                  position: selection.position,
+                  content: { ...selection.content, tool: annotationType },
+                };
                 selection.hide?.();
-                setStatus("Passage saved to Notes");
+                if (
+                  ["highlight", "underline", "mark"].includes(annotationType)
+                ) {
+                  setHighlights((items) => [...items, annotation]);
+                  setStatus("Passage saved to Notes");
+                } else setDraft(annotation);
               }}
             />
           </section>
@@ -491,12 +549,18 @@ export function EpubDemo() {
               <select
                 id="epub-selection-tool"
                 value={annotationType}
-                onChange={(e) => setAnnotationType(e.target.value)}
+                onChange={(e) => {
+                  const tool = annotationTools.find(
+                    (item) => item.id === e.target.value,
+                  );
+                  if (tool) setAnnotationType(tool.id);
+                }}
               >
-                <option value="highlight">Highlight</option>
-                <option value="underline">Underline</option>
-                <option value="mark">Mark</option>
-                <option value="note">Note highlight</option>
+                {annotationTools.map((tool) => (
+                  <option key={tool.id} value={tool.id}>
+                    {tool.label}
+                  </option>
+                ))}
               </select>
             </div>
             <span className="epub-reader-status" role="status">
@@ -521,6 +585,18 @@ export function EpubDemo() {
               </button>
             </div>
           </footer>
+          <EpubAnnotationTools
+            tool={annotationType}
+            disabled={!ready}
+            compact={compactNotes}
+            onCompactChange={() => setCompactNotes((value) => !value)}
+            onChange={(tool) => {
+              setAnnotationType(tool);
+              setStatus(`${toolLabel(tool)}: select a passage in the book`);
+              if (window.matchMedia("(max-width: 760px)").matches)
+                setSidebarOpen(false);
+            }}
+          />
         </div>
         {settingsOpen && (
           <section className="epub-settings" aria-label="Reading appearance">
@@ -588,6 +664,23 @@ export function EpubDemo() {
           </section>
         )}
       </div>
+      {draft && (
+        <EpubSketchEditor
+          key={draft.id}
+          annotation={draft}
+          onCancel={() => setDraft(null)}
+          onSave={(annotation) => {
+            setHighlights((items) => [
+              ...items.filter((item) => item.id !== annotation.id),
+              annotation,
+            ]);
+            setDraft(null);
+            setTab("annotations");
+            setSidebarOpen(true);
+            setStatus("Annotation saved to Notes");
+          }}
+        />
+      )}
     </main>
   );
 }

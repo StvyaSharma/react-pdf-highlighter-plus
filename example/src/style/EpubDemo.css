@@ -607,7 +607,278 @@
   }
 }
 @media (max-width: 760px) {
-  .epub-header-actions > button.epub-button > span { display: none; }
-  .epub-header-actions > button.epub-button { width: 36px; height: 36px; justify-content: center; }
-  .epub-backdrop { left: min(308px, 85vw); }
+  .epub-header-actions > button.epub-button > span {
+    display: none;
+  }
+  .epub-header-actions > button.epub-button {
+    width: 36px;
+    height: 36px;
+    justify-content: center;
+  }
+  .epub-backdrop {
+    left: min(308px, 85vw);
+  }
+}
+
+/* Passage annotations use document CFIs; sketches keep their own stable canvas. */
+.epub-reading-area {
+  position: relative;
+}
+.epub-fab {
+  position: absolute;
+  bottom: 88px;
+  right: 52px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+.epub-fab-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 54px;
+  height: 54px;
+  background: #4f46c7;
+  color: white !important;
+  border: 0;
+  border-radius: 50%;
+  box-shadow: 0 5px 18px #21185b35;
+}
+.epub-fab-toggle:hover {
+  background: #4037b4;
+}
+.epub-fab-panel {
+  width: 300px;
+  max-height: calc(100dvh - 225px);
+  overflow: auto;
+  background: var(--epub-panel);
+  border: 1px solid var(--epub-border);
+  border-radius: 12px;
+  box-shadow: 0 8px 30px #151d3426;
+  padding: 18px;
+}
+.epub-fab-panel > p {
+  font-size: 11px;
+  line-height: 1.7;
+  color: var(--epub-muted);
+  margin: 7px 0 13px;
+}
+.epub-tool-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+.epub-tool-grid button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 66px;
+  background: var(--epub-bg);
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 11px;
+}
+.epub-tool-grid button:hover,
+.epub-tool-grid button[aria-pressed="true"] {
+  color: var(--epub-accent);
+  background: var(--epub-tint);
+  border-color: var(--epub-accent);
+}
+.epub-compact-toggle {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 10px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-size: 12px !important;
+  border-radius: 6px;
+}
+.epub-compact-toggle[aria-pressed="true"] {
+  background: var(--epub-tint);
+  color: var(--epub-accent);
+}
+.epub-note-body {
+  flex: 1;
+  min-width: 0;
+}
+.epub-note-comment {
+  white-space: pre-wrap;
+  font-size: 12px;
+  margin: 0 13px 12px;
+  line-height: 1.7;
+}
+.epub-edit-note {
+  padding: 0 13px 12px;
+}
+.epub-notes-compact .epub-note-content span,
+.epub-notes-compact .epub-note-comment {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.epub-sketch-preview-button {
+  display: block;
+  margin: 0 10px 10px;
+  padding: 0;
+  border: 1px solid var(--epub-border);
+  border-radius: 5px;
+  background: white;
+  width: calc(100% - 20px);
+  overflow: hidden;
+}
+.epub-sketch-preview-button svg {
+  display: block;
+  width: 100%;
+}
+.epub-notes-compact .epub-sketch-preview-button {
+  display: none;
+}
+.epub-annotation-dialog {
+  color: var(--epub-text);
+  background: var(--epub-panel);
+  width: min(780px, calc(100vw - 30px));
+  max-height: calc(100dvh - 30px);
+  overflow: auto;
+  border: 1px solid var(--epub-border);
+  border-radius: 12px;
+  padding: 24px;
+  margin: auto;
+  box-shadow: 0 20px 80px #12172e44;
+}
+.epub-annotation-dialog::backdrop {
+  background: #11182788;
+}
+.epub-annotation-dialog h2 {
+  font-size: 17px;
+}
+.epub-annotation-dialog blockquote {
+  border-left: 3px solid #d7b54a;
+  padding: 8px 14px;
+  margin: 15px 0;
+  background: var(--epub-bg);
+  font:
+    14px/1.7 Georgia,
+    serif;
+  max-height: 100px;
+  overflow: auto;
+}
+.epub-sketch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin: 15px 0 10px;
+}
+.epub-sketch-toolbar > button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  background: var(--epub-bg);
+  border: 1px solid var(--epub-border);
+  border-radius: 5px;
+}
+.epub-sketch-toolbar > button[aria-pressed="true"] {
+  color: var(--epub-accent);
+  border-color: var(--epub-accent);
+  background: var(--epub-tint);
+}
+.epub-sketch-toolbar > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+.epub-sketch-toolbar select {
+  background: var(--epub-panel);
+  border: 1px solid var(--epub-border);
+  border-radius: 5px;
+  padding: 6px;
+}
+.epub-ink-color input {
+  width: 34px;
+  height: 34px;
+  padding: 2px;
+  border: 1px solid var(--epub-border);
+  border-radius: 5px;
+  background: transparent;
+  cursor: pointer;
+}
+.epub-sketch-canvas {
+  display: block;
+  width: 100%;
+  max-height: 42dvh;
+  background: #fff;
+  border: 1px solid var(--epub-border);
+  border-radius: 6px;
+  touch-action: none;
+  user-select: none;
+  cursor: crosshair;
+}
+.epub-sketch-actions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+.epub-sketch-actions .epub-button {
+  font-size: 11px;
+  padding: 6px 9px;
+}
+.epub-note-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 550;
+  margin: 18px 0;
+}
+.epub-note-label textarea {
+  display: block;
+  width: 100%;
+  min-height: 80px;
+  background: var(--epub-bg);
+  border: 1px solid var(--epub-border);
+  border-radius: 6px;
+  margin-top: 8px;
+  padding: 10px;
+  resize: vertical;
+}
+.epub-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--epub-border);
+  padding-top: 16px;
+}
+.epub-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+@media (max-width: 760px) {
+  .epub-fab {
+    right: 24px;
+    bottom: 78px;
+  }
+  .epub-fab-panel {
+    width: min(300px, calc(100vw - 48px));
+  }
+  .epub-annotation-dialog {
+    padding: 16px;
+  }
 }
